@@ -3,6 +3,7 @@
     "description": "ORM Database, lightweight, practical and easy management of the Wordpress database, using $wpdb internally, inspired by Laravel Eloquent.",
     "type": "library",
     "license": "MIT",
+    "minimum-stability": "stable",
     "autoload": {
         "psr-4": {
             "Infixs\\WordpressEloquent\\": "src/"
