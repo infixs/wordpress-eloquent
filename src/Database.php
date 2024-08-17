@@ -1,9 +1,15 @@
 <?php
-
 namespace Infixs\WordpressEloquent;
 
 defined( 'ABSPATH' ) || exit;
 
+/**
+ * Database class
+ * 
+ * This class is responsible for handling all database operations
+ * 
+ * @since 1.0.0
+ */
 class Database {
 
 	/**
@@ -13,27 +19,33 @@ class Database {
 	 */
 	protected $wpdb;
 
-	private $prefix = '';
-
 	public function __construct() {
 		global $wpdb;
 		$this->wpdb = $wpdb;
 	}
 
-	public function get_table_name( $table_name ) {
-		return sprintf( '%s%s%s', $this->wpdb->prefix, $this->prefix, $table_name );
+	public static function getTableName( $table_name, $prefix = '' ) {
+		global $wpdb;
+		return sprintf( '%s%s%s', $wpdb->prefix, $prefix, $table_name );
 	}
 
 	/**
-	 * Create a table in the database
+	 * Create or update a table in the database
+	 * 
+	 * Useful for creating new tables and updating existing tables to a new structure.
 	 *
+	 * @since 1.0.0
+	 * 
 	 * @param string $table_name
 	 * @param array $columns
+	 * 
 	 * @return void
 	 */
-	public function create_table( $table_name, $columns ) {
-		$charset_collate = $this->wpdb->get_charset_collate();
-		$full_table_name = $this->get_table_name( $table_name );
+	public static function createOrUpdateTable( $table_name, $columns ) {
+		global $wpdb;
+
+		$charset_collate = $wpdb->get_charset_collate();
+		$full_table_name = self::getTableName( $table_name );
 
 		$generated_columns = array_map( function ($column_name, $column_type) {
 			return "$column_name $column_type";
@@ -45,7 +57,7 @@ class Database {
 			PRIMARY KEY  (id)
 		) $charset_collate;";
 
-		require_once ( ABSPATH . 'wp-admin/includes/upgrade.php' );
+		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 		dbDelta( $sql );
 	}
 
@@ -60,18 +72,39 @@ class Database {
 		return $this->wpdb->prepare( $query, $args );
 	}
 
+	/**
+	 * Run a query
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param string $query
+	 * 
+	 * @return bool|int
+	 */
 	public function query( $query ) {
 		return $this->wpdb->query( $query );
 	}
 
+	/**
+	 * Get rows from the database.
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param string $query
+	 * 
+	 * @return object|null
+	 */
 	public function get_results( $query ) {
 		return $this->wpdb->get_results( $query );
 	}
 
 	/**
-	 * Get a single row from the database
+	 * Get a single row from the database.
 	 *
+	 * @since 1.0.0
+	 * 
 	 * @param string $query
+	 * 
 	 * @return string|null
 	 */
 	public function get_var( $query ) {
@@ -79,11 +112,13 @@ class Database {
 	}
 
 	/**
-	 * Delete row(s) from the database
+	 * Delete row(s) from the database.
 	 *
+	 * @since 1.0.0
 	 * @param string $table
 	 * @param array $where_values
 	 * @param array $where_format
+	 * 
 	 * @return bool|int
 	 */
 	public function delete( $table, $where_values, $where_format = null ) {
@@ -91,10 +126,13 @@ class Database {
 	}
 
 	/**
-	 * Insert data into a table
+	 * Insert data into a table.
 	 *
+	 * @since 1.0.0
+	 * 
 	 * @param string $table
 	 * @param array $data
+	 * 
 	 * @return int|bool
 	 */
 	public function insert( $table, $data ) {
@@ -106,11 +144,14 @@ class Database {
 	}
 
 	/**
-	 * Update data into a table
+	 * Update data into a table.
 	 *
+	 * @since 1.0.0
+	 * 
 	 * @param string $table
 	 * @param array $data
 	 * @param array $where_values
+	 * 
 	 * @return int|bool
 	 */
 	public function update( $table, $data, $where_values ) {
@@ -122,10 +163,13 @@ class Database {
 	}
 
 	/**
-	 * Insert multiple rows into a table
+	 * Insert multiple rows into a table.
 	 *
+	 * @since 1.0.0
+	 * 
 	 * @param string $table_name
 	 * @param array $data
+	 * 
 	 * @return bool|int Boolean true for CREATE, ALTER, TRUNCATE and DROP queries. Number of rows
 	 *                  affected/selected for all other queries. Boolean false on error.
 	 */

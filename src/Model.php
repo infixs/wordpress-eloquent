@@ -4,12 +4,20 @@ namespace Infixs\WordpressEloquent;
 
 use Infixs\WordpressEloquent\Database;
 use Infixs\WordpressEloquent\QueryBuilder;
+use Infixs\WordpressEloquent\Relations\BelongsTo;
 use Infixs\WordpressEloquent\Relations\HasOne;
 
 defined( 'ABSPATH' ) || exit;
 
-class Model {
+abstract class Model {
 	private static $instances = [];
+
+	/**
+	 * Prefix
+	 * 
+	 * @var string
+	 */
+	protected $prefix = '';
 
 	/**
 	 * Table name
@@ -41,7 +49,7 @@ class Model {
 
 	public function __construct( Database $db ) {
 		$this->db = $db;
-		$this->table_name = $this->db->get_table_name( $this->modelToTable( get_called_class() ) );
+		$this->table_name = $this->db->getTableName( $this->modelToTable( get_called_class() ) );
 		$this->foregin_key = $this->modelToForeign( get_called_class() );
 	}
 
@@ -63,6 +71,19 @@ class Model {
 	}
 
 	/**
+	 * Query
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @return QueryBuilder
+	 */
+	public static function query() {
+		$instance = self::getInstance();
+		$queryBuilder = new QueryBuilder( $instance );
+		return $queryBuilder;
+	}
+
+	/**
 	 * Add relations to a QueryBuilder
 	 *
 	 * @param string $relation_name
@@ -76,15 +97,39 @@ class Model {
 	}
 
 
+	/**
+	 * Find a record by id
+	 * 
+	 * @param int $id
+	 * 
+	 * @return object|array
+	 */
 	public static function find( $id ) {
+		throw new \Exception( 'Method not implemented' );
+	}
+
+	/**
+	 * Get all records from the database
+	 * 
+	 * @since 1.0.0
+	 * 
+	 * @return object|array
+	 */
+	public static function all() {
 		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		$result = $builder->get();
+		return $result;
 	}
 
 	/**
 	 * Where
 	 *
+	 * @since 1.0.0
+	 * 
 	 * @param string|array $column Name of the column or array of columns.
 	 * @param string|null $value Value of the column.
+	 * 
 	 * @return QueryBuilder
 	 */
 	public static function where( $column, $value = null ) {
@@ -103,7 +148,7 @@ class Model {
 	}
 
 	/**
-	 * Create
+	 * Create a record
 	 *
 	 * @param array $columns_values
 	 * @return int|bool	
@@ -117,8 +162,11 @@ class Model {
 	/**
 	 * Update
 	 *
+	 * @since 1.0.0
+	 * 
 	 * @param array $columns_values
 	 * @param array $where_values
+	 * 
 	 * @return int|bool	
 	 */
 	public static function update( array $columns_values, array $where_values ) {
@@ -141,14 +189,29 @@ class Model {
 	/**
 	 * One to one relationship
 	 *
-	 * @param string $model_class
+	 * @since 1.0.0
+	 * 
+	 * @param string $related_class
+	 * 
 	 * @return HasOne
 	 */
-	public function hasOne( string $model_class ): HasOne {
-		return new HasOne();
+	public function hasOne( string $related_class ): HasOne {
+		$foreignKey = $this->modelToForeign( $related_class );
+		return new HasOne( $related_class, "{$foreignKey}_id", "id" );
 	}
 
-
+	/**
+	 * Belongs to relationship
+	 *
+	 * @since 1.0.0
+	 * @param string $related_class
+	 * 
+	 * @return BelongsTo
+	 */
+	public function belongsTo( $related_class ): BelongsTo {
+		$foreignKey = $this->modelToForeign( $related_class );
+		return new BelongsTo( $related_class, "{$foreignKey}_id", "id" );
+	}
 
 	/**
 	 * Get table name
