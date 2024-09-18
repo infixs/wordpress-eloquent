@@ -49,6 +49,8 @@ class QueryBuilder {
 
 	protected $joinArray = [];
 
+	protected $orderBy = [];
+
 	private $select = '*';
 
 	protected $model;
@@ -191,14 +193,14 @@ class QueryBuilder {
 	/**
 	 * Delete a record from the table
 	 *
-	 * @return void
+	 * @return int|false The number of rows updated, or false on error.
 	 */
 	public function delete( $where_format = null ) {
 		$where = [];
 		foreach ( $this->whereArray as $item ) {
 			$where[ $item['column'] ] = $item['value'];
 		}
-		$this->db->delete( $this->table_name, $where, $where_format );
+		return $this->db->delete( $this->table_name, $where, $where_format );
 	}
 
 	/**
@@ -227,6 +229,15 @@ class QueryBuilder {
 			}
 			$sql .= implode( ' ', $placeholders );
 			$sql = $this->db->prepare( $sql, ...$values );
+		}
+
+		if ( ! empty( $this->orderBy ) ) {
+			$sql .= ' ORDER BY ';
+			$orderBy = [];
+			foreach ( $this->orderBy as $order ) {
+				$orderBy[] = "{$order['column']} " . strtoupper( $order['order'] );
+			}
+			$sql .= implode( ', ', $orderBy );
 		}
 
 		return $sql;
@@ -265,5 +276,10 @@ class QueryBuilder {
 			throw new \Exception( 'No record found' );
 		}
 		return $result;
+	}
+
+	public function orderBy( $column, $order = 'asc' ) {
+		$this->orderBy[] = [ 'column' => $column, 'order' => $order ];
+		return $this;
 	}
 }

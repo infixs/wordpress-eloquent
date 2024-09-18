@@ -11,7 +11,8 @@
     },
     "authors": [
         {
-            "name": "Marcos Gomes Neto"
+            "name": "Marcos Gomes Neto",
+            "homepage": "https://github.com/marcosgomesneto"
         }
     ],
     "require": {}

@@ -49,11 +49,11 @@ abstract class Model {
 
 	public function __construct( Database $db ) {
 		$this->db = $db;
-		$this->table_name = $this->db->getTableName( $this->modelToTable( get_called_class() ) );
+		$this->table_name = $this->db->getTableName( self::modelToTable( get_called_class() ), $this->getPrefix() );
 		$this->foregin_key = $this->modelToForeign( get_called_class() );
 	}
 
-	private function modelToTable( $model ) {
+	public static function modelToTable( $model ) {
 		$reflect = new \ReflectionClass( $model );
 		$table_name_underscored = preg_replace( '/(?<!^)([A-Z])/', '_$1', $reflect->getShortName() );
 		return strtolower( $table_name_underscored ) . 's';
@@ -147,15 +147,21 @@ abstract class Model {
 		return $builder;
 	}
 
+	public static function getPrefix() {
+		$class = get_called_class();
+		$reflect = new \ReflectionClass( $class );
+		$prefix = $reflect->getProperty( 'prefix' );
+		return $prefix->getDefaultValue();
+	}
+
 	/**
 	 * Create a record
 	 *
 	 * @param array $columns_values
-	 * @return int|bool	
+	 * @return int|bool	The ID of the tracking code or false on error.
 	 */
 	public static function create( $columns_values ) {
-		$instance = self::getInstance();
-		return $instance->db->insert( $instance->table_name, $columns_values );
+		return Database::insert( Database::getTableName( self::modelToTable( get_called_class() ), self::getPrefix() ), $columns_values );
 	}
 
 

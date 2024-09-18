@@ -57,7 +57,7 @@ class Database {
 			PRIMARY KEY  (id)
 		) $charset_collate;";
 
-		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql );
 	}
 
@@ -135,12 +135,13 @@ class Database {
 	 * 
 	 * @return int|bool
 	 */
-	public function insert( $table, $data ) {
-		$inserted = $this->wpdb->insert( $table, $data );
+	public static function insert( $table, $data ) {
+		global $wpdb;
+		$inserted = $wpdb->insert( $table, $data );
 		if ( ! $inserted ) {
 			return false;
 		}
-		return $this->wpdb->insert_id;
+		return $wpdb->insert_id;
 	}
 
 	/**
