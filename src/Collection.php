@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
  * 
  * @since 1.0.0
  */
-class Collection implements \ArrayAccess {
+class Collection implements \ArrayAccess, \IteratorAggregate {
 
 	public $items = [];
 
@@ -45,6 +45,16 @@ class Collection implements \ArrayAccess {
 		}
 
 		return $this;
+	}
+
+	public function firstWhere( $key, $value ) {
+		foreach ( $this->items as $item ) {
+			if ( $item->$key === $value ) {
+				return $item;
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -92,4 +102,13 @@ class Collection implements \ArrayAccess {
 		unset( $this->items[ $key ] );
 	}
 
+
+	/**
+	 * Get an iterator for the items.
+	 *
+	 * @return \ArrayIterator
+	 */
+	public function getIterator(): \Traversable {
+		return new \ArrayIterator( $this->items );
+	}
 }

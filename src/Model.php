@@ -36,6 +36,8 @@ abstract class Model {
 
 	protected $data = [];
 
+	private $was_retrieved = false;
+
 	/**
 	 * Database instance
 	 * 
@@ -76,6 +78,12 @@ abstract class Model {
 		return strtolower( $table_name_underscored ) . 's';
 	}
 
+	/**
+	 * Magic method to get properties
+	 *
+	 * @param string $name
+	 * @return mixed
+	 */
 
 	public function __get( $name ) {
 		if ( array_key_exists( $name, $this->data ) ) {
@@ -85,6 +93,16 @@ abstract class Model {
 		return $this->$name;
 	}
 
+	/**
+	 * Magic method to set properties
+	 *
+	 * @param string $name
+	 * 
+	 * @return void
+	 */
+	public function __set( $name, $value ) {
+		$this->data[ $name ] = $value;
+	}
 
 	private function modelToForeign( $model ) {
 		$reflect = new \ReflectionClass( $model );
@@ -131,7 +149,10 @@ abstract class Model {
 	 * @return object|array
 	 */
 	public static function find( $id ) {
-		throw new \Exception( 'Method not implemented' );
+		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		$result = $builder->where( $instance->primaryKey, $id )->first();
+		return $result;
 	}
 
 	/**
@@ -207,29 +228,45 @@ abstract class Model {
 		return Database::insert( Database::getTableName( self::modelToTable( get_called_class() ), self::getPrefix() ), $columns_values );
 	}
 
-
-	/**
-	 * Update
-	 *
-	 * @since 1.0.0
-	 * 
-	 * @param array $columns_values
-	 * @param array $where_values
-	 * 
-	 * @return int|bool	
-	 */
-	public static function update( array $columns_values, array $where_values ) {
-		$instance = self::getInstance();
-		return $instance->db->update( $instance->table_name, $columns_values, $where_values );
-	}
-
 	/**
 	 * Save the model to the database.
 	 *
 	 * @return false|int
 	 */
 	public function save() {
-		return $this->db->insert( $this->table_name, $this->data );
+		if ( $this->wasRetrieved() ) {
+			$data = $this->data;
+			$id = $data[ $this->primaryKey ];
+			unset( $data[ $this->primaryKey ] );
+
+			if ( $this->trashed() ) {
+				unset( $data['deleted_at'] );
+			}
+
+			$queryBuilder = new QueryBuilder( $this );
+			return $queryBuilder->where( $this->primaryKey, $id )->update( $data );
+		} else {
+			$result = $this->db->insert( $this->table_name, $this->data );
+			if ( $result ) {
+				$this->data[ $this->primaryKey ] = $result;
+			}
+			return $result;
+		}
+	}
+
+	/**
+	 * Delete the model from the database.
+	 *
+	 * @return bool|int
+	 */
+	public function delete() {
+		if ( $this->wasRetrieved() ) {
+			$data = $this->data;
+			$id = $data[ $this->primaryKey ];
+			$queryBuilder = new QueryBuilder( $this );
+			return $queryBuilder->where( $this->primaryKey, $id )->delete();
+		}
+		return false;
 	}
 
 	public function setAttribute( $key, $value ) {
@@ -339,4 +376,12 @@ abstract class Model {
 		return in_array( SoftDeletes::class, class_uses( $this ) );
 	}
 
+
+	public function wasRetrieved() {
+		return $this->was_retrieved;
+	}
+
+	public function setWasRetrieved( $was_retrieved ) {
+		$this->was_retrieved = $was_retrieved;
+	}
 }

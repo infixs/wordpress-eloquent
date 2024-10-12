@@ -80,6 +80,14 @@ class QueryBuilder {
 		$this->db = $model->getDatabase();
 		$this->table_name = $model->getTableName();
 		$this->model = $model;
+		if ( $model->trashed() ) {
+			$this->whereArray[] = [ 'column' => 'deleted_at', 'value' => '!#####NULL#####!', 'operator' => 'IS' ];
+			add_filter( 'query', [ $this, 'nulled_query_replace' ] );
+		}
+	}
+
+	public function nulled_query_replace( $query ) {
+		return str_replace( [ "IS '!#####NULL#####!'", "IS NOT '!#####NULL#####!'" ], [ 'IS NULL', 'IS NOT NULL' ], $query );
 	}
 
 	public function select( $columns ) {
@@ -251,11 +259,35 @@ class QueryBuilder {
 	 * @return int|false The number of rows updated, or false on error.
 	 */
 	public function delete( $where_format = null ) {
-		$where = [];
-		foreach ( $this->whereArray as $item ) {
-			$where[ $item['column'] ] = $item['value'];
+		if ( $this->model->trashed() ) {
+			return $this->update( [ 'deleted_at' => current_time( 'mysql' ) ] );
+		} else {
+			$where = [];
+			foreach ( $this->whereArray as $item ) {
+				$where[ $item['column'] ] = $item['value'];
+			}
+			return $this->db->delete( $this->table_name, $where, $where_format );
 		}
-		return $this->db->delete( $this->table_name, $where, $where_format );
+	}
+
+	public function update( $columns_values ) {
+		$where = $this->resolveWhere( $this->whereArray );
+		$set_clauses = [];
+		$values = [];
+
+		foreach ( $columns_values as $column => $value ) {
+			$set_clauses[] = "{$column} = %s";
+			$values[] = $value;
+		}
+
+		$set_clause = implode( ', ', $set_clauses );
+		$where_clause = implode( ' ', $where['placeholders'] );
+		$values = array_merge( $values, $where['values'] );
+
+		$sql = "UPDATE {$this->table_name} SET {$set_clause} WHERE {$where_clause}";
+
+		$prepared_query = $this->db->prepare( $sql, ...$values );
+		return $this->db->query( $prepared_query );
 	}
 
 	/**
@@ -275,16 +307,9 @@ class QueryBuilder {
 
 		if ( ! empty( $this->whereArray ) ) {
 			$sql .= ' WHERE ';
-			$placeholders = [];
-			$values = [];
-			foreach ( $this->whereArray as $where ) {
-				$operator = $where['operator'] ?? '=';
-				$value = $where['operator'] === 'IN' ? '(%s)' : '%s';
-				$placeholder = "{$this->table_name}.{$where['column']} {$operator} {$value}";
-				$method = $where['method'] ?? 'AND';
-				$placeholders[] = empty( $placeholders ) ? $placeholder : "{$method} {$placeholder}";
-				$values[] = is_array( $where['value'] ) ? implode( ', ', $where['value'] ) : $where['value'];
-			}
+			$where = $this->resolveWhere( $this->whereArray );
+			$placeholders = $where['placeholders'];
+			$values = $where['values'];
 			$sql .= implode( ' ', $placeholders );
 			$sql = $this->db->prepare( $sql, ...$values );
 		}
@@ -301,6 +326,21 @@ class QueryBuilder {
 		return $sql;
 	}
 
+	public function resolveWhere( $where ) {
+		$placeholders = [];
+		$values = [];
+		foreach ( $this->whereArray as $where ) {
+			$operator = $where['operator'] ?? '=';
+			$value = $where['operator'] === 'IN' ? '(%s)' : '%s';
+			$placeholder = "{$this->table_name}.{$where['column']} {$operator} {$value}";
+			$method = $where['method'] ?? 'AND';
+			$placeholders[] = empty( $placeholders ) ? $placeholder : "{$method} {$placeholder}";
+			$values[] = is_array( $where['value'] ) ? implode( ', ', $where['value'] ) : $where['value'];
+		}
+
+		return [ 'placeholders' => $placeholders, 'values' => $values ];
+	}
+
 	/**
 	 * Generate the query
 	 *
@@ -315,21 +355,27 @@ class QueryBuilder {
 		foreach ( $results as $result ) {
 			$primaryKey = $this->model->getPrimaryKey();
 			$ids[] = $result->$primaryKey;
+			foreach ( $this->withArray as $with ) {
+				$relations[ $result->$primaryKey ][ $with['relation'] ] = new Collection();
+			}
 		}
 
 		foreach ( $this->withArray as $with ) {
-			$sql = "SELECT * FROM {$with['table']} WHERE {$with['table']}.{$with['foreign_key']} IN (%s)";
+			$softDeleteSql = '';
+			if ( in_array( SoftDeletes::class, class_uses( $with['model'] ) ) ) {
+				$softDeleteSql = " AND deleted_at IS NULL";
+			}
+
+			$sql = "SELECT * FROM {$with['table']} WHERE {$with['table']}.{$with['foreign_key']} IN (%s){$softDeleteSql}";
 			$sql = $this->db->prepare( $sql, implode( ', ', $ids ) );
 			$relationResult = $this->db->get_results( $sql );
 			foreach ( $relationResult as $item ) {
 				$withModel = new $with['model']( (array) $item );
+				$withModel->setWasRetrieved( true );
 				$foreginKey = $with['foreign_key'];
 				if ( isset( $relations[ $item->$foreginKey ], $relations[ $item->$foreginKey ][ $with['relation'] ] ) ) {
-					$relations[ $item->$foreginKey ][ $with['relation'] ]->push( new $withModel( (array) $item ) );
-				} else {
-					$relations[ $item->$foreginKey ][ $with['relation'] ] = new Collection( [ new $withModel( (array) $item ) ] );
+					$relations[ $item->$foreginKey ][ $with['relation'] ]->push( $withModel );
 				}
-
 			}
 		}
 
@@ -353,7 +399,9 @@ class QueryBuilder {
 
 			$relation = $relations[ $result->$primaryKey ] ?? [];
 			$result = array_merge( (array) $result, $relation );
-			$items[] = new $this->model( (array) $result );
+			$itemModel = new $this->model( (array) $result );
+			$itemModel->setWasRetrieved( true );
+			$items[] = $itemModel;
 		}
 		return new Collection( $items );
 	}
