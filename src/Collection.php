@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
  * 
  * @since 1.0.0
  */
-class Collection implements \ArrayAccess {
+class Collection implements \ArrayAccess, \IteratorAggregate {
 
 	public $items = [];
 
@@ -29,7 +29,7 @@ class Collection implements \ArrayAccess {
 	 *
 	 * @return int
 	 */
-	public function count(): int {
+	public function count() {
 		return count( $this->items );
 	}
 
@@ -47,13 +47,69 @@ class Collection implements \ArrayAccess {
 		return $this;
 	}
 
+	public function toArray() {
+		return $this->items;
+	}
+
+	public function pluck( $value, $key = null ) {
+		$results = [];
+
+		foreach ( $this->items as $item ) {
+			$itemValue = $this->data_get( $item, $value );
+
+			if ( is_null( $key ) ) {
+				$results[] = $itemValue;
+			} else {
+				$itemKey = $this->data_get( $item, $key );
+
+				$results[ $itemKey ] = $itemValue;
+			}
+		}
+
+		return new self( $results );
+	}
+
+
+	public function data_get( $target, $key, $default = null ) {
+		if ( is_null( $key ) ) {
+			return $target;
+		}
+
+		foreach ( explode( '.', $key ) as $segment ) {
+			if ( is_array( $target ) ) {
+				if ( ! array_key_exists( $segment, $target ) ) {
+					return $default;
+				}
+
+				$target = $target[ $segment ];
+			} elseif ( $target instanceof \ArrayAccess ) {
+				if ( ! isset( $target[ $segment ] ) ) {
+					return $default;
+				}
+
+				$target = $target[ $segment ];
+			} elseif ( is_object( $target ) ) {
+				if ( ! isset( $target->{$segment} ) ) {
+					return $default;
+				}
+
+				$target = $target->{$segment};
+			} else {
+				return $default;
+			}
+		}
+
+		return $target;
+	}
+
+
 	/**
 	 * Determine if an item exists at an offset.
 	 *
 	 * @param  mixed  $key
 	 * @return bool
 	 */
-	public function offsetExists( $key ): bool {
+	public function offsetExists( $key ) {
 		return isset( $this->items[ $key ] );
 	}
 
@@ -63,7 +119,7 @@ class Collection implements \ArrayAccess {
 	 * @param  mixed  $key
 	 * @return mixed
 	 */
-	public function offsetGet( $key ): mixed {
+	public function offsetGet( $key ) {
 		return $this->items[ $key ];
 	}
 
@@ -74,7 +130,7 @@ class Collection implements \ArrayAccess {
 	 * @param  mixed  $value
 	 * @return void
 	 */
-	public function offsetSet( $key, $value ): void {
+	public function offsetSet( $key, $value ) {
 		if ( is_null( $key ) ) {
 			$this->items[] = $value;
 		} else {
@@ -88,8 +144,17 @@ class Collection implements \ArrayAccess {
 	 * @param  mixed  $key
 	 * @return void
 	 */
-	public function offsetUnset( $key ): void {
+	public function offsetUnset( $key ) {
 		unset( $this->items[ $key ] );
 	}
 
+
+	/**
+	 * Get an iterator for the items.
+	 *
+	 * @return \ArrayIterator
+	 */
+	public function getIterator() {
+		return new \ArrayIterator( $this->items );
+	}
 }
