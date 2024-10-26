@@ -11,7 +11,7 @@ use Infixs\WordpressEloquent\Relations\HasOne;
 
 defined( 'ABSPATH' ) || exit;
 
-abstract class Model {
+abstract class Model implements \ArrayAccess {
 	private static $instances = [];
 
 	protected $primaryKey = 'id';
@@ -30,7 +30,7 @@ abstract class Model {
 	 * 
 	 * @var string
 	 */
-	protected $table_name;
+	protected $table;
 
 	protected $foregin_key;
 
@@ -67,7 +67,11 @@ abstract class Model {
 	 */
 	public function __construct( $data = [] ) {
 		$this->db = new Database();
-		$this->table_name = $this->db->getTableName( self::modelToTable( get_called_class() ), $this->getPrefix() );
+		if ( ! isset( $this->table ) || empty( $this->table ) ) {
+			$this->table = $this->db->getTableName( self::modelToTable( get_called_class() ), $this->getPrefix() );
+		} else {
+			$this->table = $this->db->getTableName( $this->table, $this->getPrefix() );
+		}
 		$this->foregin_key = $this->modelToForeign( get_called_class() );
 		$this->data = $data;
 	}
@@ -76,32 +80,6 @@ abstract class Model {
 		$reflect = new \ReflectionClass( $model );
 		$table_name_underscored = preg_replace( '/(?<!^)([A-Z])/', '_$1', $reflect->getShortName() );
 		return strtolower( $table_name_underscored ) . 's';
-	}
-
-	/**
-	 * Magic method to get properties
-	 *
-	 * @param string $name
-	 * @return mixed
-	 */
-
-	public function __get( $name ) {
-		if ( array_key_exists( $name, $this->data ) ) {
-			return $this->data[ $name ];
-		}
-
-		return $this->$name;
-	}
-
-	/**
-	 * Magic method to set properties
-	 *
-	 * @param string $name
-	 * 
-	 * @return void
-	 */
-	public function __set( $name, $value ) {
-		$this->data[ $name ] = $value;
 	}
 
 	private function modelToForeign( $model ) {
@@ -146,13 +124,12 @@ abstract class Model {
 	 * 
 	 * @param int $id
 	 * 
-	 * @return object|array
+	 * @return Model|null
 	 */
 	public static function find( $id ) {
 		$instance = self::getInstance();
 		$builder = new QueryBuilder( $instance );
-		$result = $builder->where( $instance->primaryKey, $id )->first();
-		return $result;
+		return $builder->where( $instance->primaryKey, $id )->first();
 	}
 
 	/**
@@ -173,24 +150,34 @@ abstract class Model {
 	 * Where
 	 *
 	 * @since 1.0.0
+	 * @since 1.0.2
 	 * 
-	 * @param string|array $column Name of the column or array of columns.
-	 * @param string|null $value Value of the column.
+	 * @param mixed $column Column name
+	 * @param mixed $operator Value or Operator
+	 * @param mixed $value Valor or null
 	 * 
 	 * @return QueryBuilder
 	 */
-	public static function where( $column, $value = null ) {
+	public static function where( $column, $operator = null, $value = null ) {
 		$instance = self::getInstance();
 		$builder = new QueryBuilder( $instance );
+		$builder->where( $column, $operator, $value );
+		return $builder;
+	}
 
-		if ( is_array( $column ) ) {
-			foreach ( $column as $col => $val ) {
-				$builder->where( $col, $val );
-			}
-		} else {
-			$builder->where( $column, $value );
-		}
-
+	/**
+	 * Select
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param string|array $columns
+	 * 
+	 * @return QueryBuilder
+	 */
+	public static function select( $columns ) {
+		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		$builder->select( $columns );
 		return $builder;
 	}
 
@@ -211,11 +198,19 @@ abstract class Model {
 		return $builder;
 	}
 
+	/**
+	 * Get Prefix
+	 * 
+	 * Add Compatibility with PHP 7.4
+	 * PHP >= 8 use  getDefaultValue
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @return string
+	 */
 	public static function getPrefix() {
 		$class = get_called_class();
-		$reflect = new \ReflectionClass( $class );
-		$prefix = $reflect->getProperty( 'prefix' );
-		return $prefix->getDefaultValue();
+		return Reflection::getDefaultValue( $class, 'prefix', '' );
 	}
 
 	/**
@@ -226,6 +221,22 @@ abstract class Model {
 	 */
 	public static function create( $columns_values ) {
 		return Database::insert( Database::getTableName( self::modelToTable( get_called_class() ), self::getPrefix() ), $columns_values );
+	}
+
+
+	/**
+	 * Update
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param array $columns_values
+	 * @param array $where_values
+	 * 
+	 * @return int|bool	
+	 */
+	public static function update( array $columns_values, array $where_values ) {
+		$instance = self::getInstance();
+		return $instance->db->update( $instance->table, $columns_values, $where_values );
 	}
 
 	/**
@@ -246,7 +257,7 @@ abstract class Model {
 			$queryBuilder = new QueryBuilder( $this );
 			return $queryBuilder->where( $this->primaryKey, $id )->update( $data );
 		} else {
-			$result = $this->db->insert( $this->table_name, $this->data );
+			$result = $this->db->insert( $this->table, $this->data );
 			if ( $result ) {
 				$this->data[ $this->primaryKey ] = $result;
 			}
@@ -282,7 +293,7 @@ abstract class Model {
 	 */
 	public static function createMany( $columns_values ) {
 		$instance = self::getInstance();
-		return $instance->db->insert_multiple( $instance->table_name, $columns_values );
+		return $instance->db->insert_multiple( $instance->table, $columns_values );
 	}
 
 	/**
@@ -335,7 +346,7 @@ abstract class Model {
 	 * @return string
 	 */
 	public function getTableName() {
-		return $this->table_name;
+		return $this->table;
 	}
 
 	/**
@@ -358,7 +369,7 @@ abstract class Model {
 	 */
 	static public function getTable() {
 		$instance = self::getInstance();
-		return $instance->table_name;
+		return $instance->table;
 	}
 
 	/**
@@ -376,6 +387,58 @@ abstract class Model {
 		return in_array( SoftDeletes::class, class_uses( $this ) );
 	}
 
+	public function __get( $name ) {
+		if ( array_key_exists( $name, $this->data ) ) {
+			return $this->data[ $name ];
+		}
+
+		return $this->$name;
+	}
+
+	/**
+	 * Determine if an item exists at an offset.
+	 *
+	 * @param  mixed  $key
+	 * @return bool
+	 */
+	public function offsetExists( $key ) {
+		return isset( $this->data[ $key ] );
+	}
+
+	/**
+	 * Get an item at a given offset.
+	 *
+	 * @param  mixed  $key
+	 * @return mixed
+	 */
+	public function offsetGet( $key ) {
+		return $this->data[ $key ];
+	}
+
+	/**
+	 * Set the item at a given offset.
+	 *
+	 * @param  mixed|null  $key
+	 * @param  mixed  $value
+	 * @return void
+	 */
+	public function offsetSet( $key, $value ) {
+		if ( is_null( $key ) ) {
+			$this->data[] = $value;
+		} else {
+			$this->data[ $key ] = $value;
+		}
+	}
+
+	/**
+	 * Unset the item at a given offset.
+	 *
+	 * @param  mixed  $key
+	 * @return void
+	 */
+	public function offsetUnset( $key ) {
+		unset( $this->data[ $key ] );
+	}
 
 	public function wasRetrieved() {
 		return $this->was_retrieved;

@@ -50,6 +50,8 @@ class QueryBuilder {
 
 	protected $joinArray = [];
 
+	protected $groupBy = [];
+
 	/**
 	 * Where array
 	 * 
@@ -67,6 +69,22 @@ class QueryBuilder {
 	protected $orderBy = [];
 
 	private $select = '*';
+
+	/**
+	 * Limit
+	 * 
+	 * @since 1.0.0
+	 * @var int
+	 */
+	private $limit;
+
+	/**
+	 * Offset
+	 * 
+	 * @since 1.0.0
+	 * @var int
+	 */
+	private $offset;
 
 	/**
 	 * Model instance
@@ -90,8 +108,17 @@ class QueryBuilder {
 		return str_replace( [ "IS '!#####NULL#####!'", "IS NOT '!#####NULL#####!'" ], [ 'IS NULL', 'IS NOT NULL' ], $query );
 	}
 
+	/**
+	 * Select columns
+	 * 
+	 * @since 1.0.0
+	 * 
+	 * @param string|array $columns
+	 * 
+	 * @return QueryBuilder
+	 */
 	public function select( $columns ) {
-		$this->select = $columns;
+		$this->select = is_array( $columns ) ? implode( ', ', $columns ) : $columns;
 		return $this;
 	}
 
@@ -104,10 +131,34 @@ class QueryBuilder {
 	 * @param mixed $operator Value or Operator
 	 * @param mixed $value Valor or null
 	 * 
-	 * @return static
+	 * @return QueryBuilder
 	 */
-	public function where( $column, $operator, $value = null ) {
+	public function where( $column, $operator = null, $value = null ) {
+		if ( is_array( $column ) ) {
+			foreach ( $column as $col => $val ) {
+				$this->where( $col, $val );
+			}
+			return $this;
+		}
+
 		$this->whereArray[] = [ 'column' => $column, 'value' => $value ?? $operator, 'operator' => isset( $value ) ? $operator : '=' ];
+		return $this;
+	}
+
+
+	/**
+	 * Group by columns
+	 * 
+	 * @since 1.0.0
+	 * 
+	 * @param string ...$column
+	 * 
+	 * @return QueryBuilder
+	 */
+	public function groupBy( ...$columns ) {
+		foreach ( $columns as $column ) {
+			$this->groupBy[] = $column;
+		}
 		return $this;
 	}
 
@@ -147,12 +198,9 @@ class QueryBuilder {
 			if ( $returnType->getName() === HasOne::class) {
 				/**
 				 * @var HasOne
+				 * TODO: Verify not implemented
 				 */
 				$hasOne = $method->invoke( $this->model );
-				$relatedClass = $hasOne->getRelatedClass();
-				$relatedReflection = new \ReflectionClass( $relatedClass );
-				$hasPrefixProperty = $relatedReflection->getProperty( "prefix" );
-				$prefix = $hasPrefixProperty->getDefaultValue();
 
 				$table_name = Database::getTableName( "{$relation}s" );
 
@@ -168,10 +216,6 @@ class QueryBuilder {
 				 * @var BelongsTo
 				 */
 				$belongsTo = $method->invoke( $this->model );
-				$relatedClass = $belongsTo->getRelatedClass();
-				$relatedReflection = new \ReflectionClass( $relatedClass );
-				$hasPrefixProperty = $relatedReflection->getProperty( "prefix" );
-				$prefix = $hasPrefixProperty->getDefaultValue();
 
 				//$belongsTo->ge
 				$table_name = Database::getTableName( "{$relation}s" );
@@ -314,6 +358,11 @@ class QueryBuilder {
 			$sql = $this->db->prepare( $sql, ...$values );
 		}
 
+		if ( ! empty( $this->groupBy ) ) {
+			$sql .= ' GROUP BY ';
+			$sql .= implode( ', ', $this->groupBy );
+		}
+
 		if ( ! empty( $this->orderBy ) ) {
 			$sql .= ' ORDER BY ';
 			$orderBy = [];
@@ -321,6 +370,14 @@ class QueryBuilder {
 				$orderBy[] = "{$order['column']} " . strtoupper( $order['order'] );
 			}
 			$sql .= implode( ', ', $orderBy );
+		}
+
+		if ( $this->limit ) {
+			$sql .= " LIMIT {$this->limit}";
+		}
+
+		if ( $this->offset ) {
+			$sql .= " OFFSET {$this->offset}";
 		}
 
 		return $sql;
@@ -331,11 +388,15 @@ class QueryBuilder {
 		$values = [];
 		foreach ( $this->whereArray as $where ) {
 			$operator = $where['operator'] ?? '=';
-			$value = $where['operator'] === 'IN' ? '(%s)' : '%s';
+			$value = $where['operator'] === 'IN' ? '(' . implode( ', ', array_fill( 0, count( $where['value'] ), '%s' ) ) . ')' : '%s';
 			$placeholder = "{$this->table_name}.{$where['column']} {$operator} {$value}";
 			$method = $where['method'] ?? 'AND';
 			$placeholders[] = empty( $placeholders ) ? $placeholder : "{$method} {$placeholder}";
-			$values[] = is_array( $where['value'] ) ? implode( ', ', $where['value'] ) : $where['value'];
+			if ( is_array( $where['value'] ) ) {
+				$values = array_merge( $values, $where['value'] );
+			} else {
+				$values[] = $where['value'];
+			}
 		}
 
 		return [ 'placeholders' => $placeholders, 'values' => $values ];
@@ -349,18 +410,24 @@ class QueryBuilder {
 	 * @return array
 	 */
 	public function getWithRelations( $results ) {
+		if ( empty( $this->withArray ) ) {
+			return [];
+		}
+
 		$relations = [];
 
 		$ids = [];
 		foreach ( $results as $result ) {
 			$primaryKey = $this->model->getPrimaryKey();
 			$ids[] = $result->$primaryKey;
-			foreach ( $this->withArray as $with ) {
-				$relations[ $result->$primaryKey ][ $with['relation'] ] = new Collection();
-			}
 		}
 
+		//TODO: optimize this
 		foreach ( $this->withArray as $with ) {
+			foreach ( $ids as $id ) {
+				$relations[ $id ][ $with['relation'] ] = new Collection( [] );
+			}
+
 			$softDeleteSql = '';
 			if ( in_array( SoftDeletes::class, class_uses( $with['model'] ) ) ) {
 				$softDeleteSql = " AND deleted_at IS NULL";
@@ -369,6 +436,7 @@ class QueryBuilder {
 			$sql = "SELECT * FROM {$with['table']} WHERE {$with['table']}.{$with['foreign_key']} IN (%s){$softDeleteSql}";
 			$sql = $this->db->prepare( $sql, implode( ', ', $ids ) );
 			$relationResult = $this->db->get_results( $sql );
+
 			foreach ( $relationResult as $item ) {
 				$withModel = new $with['model']( (array) $item );
 				$withModel->setWasRetrieved( true );
@@ -386,7 +454,7 @@ class QueryBuilder {
 	 * Get all records from the table
 	 *
 	 * @since 1.0.0
-	 * @return array|object|null Database query results.
+	 * @return Collection Database query results.
 	 */
 	public function get() {
 		$results = $this->db->get_results( $this->generateQuery() );
@@ -394,11 +462,10 @@ class QueryBuilder {
 		$items = [];
 		foreach ( $results as $result ) {
 			$primaryKey = $this->model->getPrimaryKey();
-			if ( ! isset( $result->$primaryKey ) )
-				continue;
-
-			$relation = $relations[ $result->$primaryKey ] ?? [];
-			$result = array_merge( (array) $result, $relation );
+			if ( isset( $result->$primaryKey ) ) {
+				$relation = $relations[ $result->$primaryKey ] ?? [];
+				$result = array_merge( (array) $result, $relation );
+			}
 			$itemModel = new $this->model( (array) $result );
 			$itemModel->setWasRetrieved( true );
 			$items[] = $itemModel;
@@ -410,7 +477,7 @@ class QueryBuilder {
 	 * Get the first record from the table
 	 *
 	 * @since 1.0.0
-	 * @return object|null Database query result.
+	 * @return Model|null Database query result.
 	 */
 	public function first() {
 		$results = $this->get();
@@ -433,6 +500,34 @@ class QueryBuilder {
 
 	public function orderBy( $column, $order = 'asc' ) {
 		$this->orderBy[] = [ 'column' => $column, 'order' => $order ];
+		return $this;
+	}
+
+	/**
+	 * Limit
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param int $limit
+	 * 
+	 * @return QueryBuilder
+	 */
+	public function limit( $limit ) {
+		$this->limit = $limit;
+		return $this;
+	}
+
+	/**
+	 * Offset
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param int $offset
+	 * 
+	 * @return QueryBuilder
+	 */
+	public function offset( $offset ) {
+		$this->offset = $offset;
 		return $this;
 	}
 }
