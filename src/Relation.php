@@ -15,16 +15,21 @@ abstract class Relation {
 	protected $localKey;
 	protected $relation;
 
+	protected $parent;
+
 	/**
 	 * Relation constructor.
+	 * 
+	 * @param Model $parent
 	 * @param string $relatedClass
 	 * @param $foreignKey
 	 * @param $localKey
 	 */
-	public function __construct( $relatedClass, $foreignKey, $localKey ) {
+	public function __construct( Model $parent, $relatedClass, $foreignKey, $localKey ) {
 		$this->relatedClass = $relatedClass;
 		$this->foreignKey = $foreignKey;
 		$this->localKey = $localKey;
+		$this->parent = $parent;
 		//$this->relation = $relation;
 	}
 

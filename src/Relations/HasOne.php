@@ -13,6 +13,6 @@ defined( 'ABSPATH' ) || exit;
  * 
  * @since 1.0.0
  */
-class HasOne extends Relation {
+class HasOne extends HasOneOrMany {
 
 }

@@ -4,13 +4,19 @@ namespace Infixs\WordpressEloquent;
 
 use Infixs\WordpressEloquent\Database;
 use Infixs\WordpressEloquent\QueryBuilder;
+use Infixs\WordpressEloquent\SoftDeletes;
 use Infixs\WordpressEloquent\Relations\BelongsTo;
+use Infixs\WordpressEloquent\Relations\HasMany;
 use Infixs\WordpressEloquent\Relations\HasOne;
 
 defined( 'ABSPATH' ) || exit;
 
-abstract class Model {
+abstract class Model implements \ArrayAccess {
 	private static $instances = [];
+
+	protected $primaryKey = 'id';
+
+	protected $fillable = [];
 
 	/**
 	 * Prefix
@@ -24,9 +30,13 @@ abstract class Model {
 	 * 
 	 * @var string
 	 */
-	protected $table_name;
+	protected $table;
 
 	protected $foregin_key;
+
+	protected $data = [];
+
+	private $was_retrieved = false;
 
 	/**
 	 * Database instance
@@ -42,15 +52,28 @@ abstract class Model {
 	protected static function getInstance() {
 		$class = get_called_class();
 		if ( ! isset( self::$instances[ $class ] ) ) {
-			self::$instances[ $class ] = new $class( new Database() );
+			self::$instances[ $class ] = new $class( [] );
 		}
 		return self::$instances[ $class ];
 	}
 
-	public function __construct( Database $db ) {
-		$this->db = $db;
-		$this->table_name = $this->db->getTableName( self::modelToTable( get_called_class() ), $this->getPrefix() );
+	/**
+	 * Constructor
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param Database $db
+	 * @param array $data
+	 */
+	public function __construct( $data = [] ) {
+		$this->db = new Database();
+		if ( ! isset( $this->table ) || empty( $this->table ) ) {
+			$this->table = $this->db->getTableName( self::modelToTable( get_called_class() ), $this->getPrefix() );
+		} else {
+			$this->table = $this->db->getTableName( $this->table, $this->getPrefix() );
+		}
 		$this->foregin_key = $this->modelToForeign( get_called_class() );
+		$this->data = $data;
 	}
 
 	public static function modelToTable( $model ) {
@@ -58,7 +81,6 @@ abstract class Model {
 		$table_name_underscored = preg_replace( '/(?<!^)([A-Z])/', '_$1', $reflect->getShortName() );
 		return strtolower( $table_name_underscored ) . 's';
 	}
-
 
 	private function modelToForeign( $model ) {
 		$reflect = new \ReflectionClass( $model );
@@ -102,10 +124,12 @@ abstract class Model {
 	 * 
 	 * @param int $id
 	 * 
-	 * @return object|array
+	 * @return Model|null
 	 */
 	public static function find( $id ) {
-		throw new \Exception( 'Method not implemented' );
+		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		return $builder->where( $instance->primaryKey, $id )->first();
 	}
 
 	/**
@@ -126,39 +150,74 @@ abstract class Model {
 	 * Where
 	 *
 	 * @since 1.0.0
+	 * @since 1.0.2
 	 * 
-	 * @param string|array $column Name of the column or array of columns.
-	 * @param string|null $value Value of the column.
+	 * @param mixed $column Column name
+	 * @param mixed $operator Value or Operator
+	 * @param mixed $value Valor or null
 	 * 
 	 * @return QueryBuilder
 	 */
-	public static function where( $column, $value = null ) {
+	public static function where( $column, $operator = null, $value = null ) {
 		$instance = self::getInstance();
 		$builder = new QueryBuilder( $instance );
-
-		if ( is_array( $column ) ) {
-			foreach ( $column as $col => $val ) {
-				$builder->where( $col, $val );
-			}
-		} else {
-			$builder->where( $column, $value );
-		}
-
+		$builder->where( $column, $operator, $value );
 		return $builder;
 	}
 
+	/**
+	 * Select
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param string|array $columns
+	 * 
+	 * @return QueryBuilder
+	 */
+	public static function select( $columns ) {
+		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		$builder->select( $columns );
+		return $builder;
+	}
+
+	/**
+	 * Where In
+	 *
+	 * @since 1.0.2
+	 * 
+	 * @param string $column Name of the column.
+	 * @param array $value Array values of the column.
+	 * 
+	 * @return QueryBuilder
+	 */
+	public static function whereIn( $column, $values = [] ) {
+		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		$builder->whereIn( $column, $values );
+		return $builder;
+	}
+
+	/**
+	 * Get Prefix
+	 * 
+	 * Add Compatibility with PHP 7.4
+	 * PHP >= 8 use  getDefaultValue
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @return string
+	 */
 	public static function getPrefix() {
 		$class = get_called_class();
-		$reflect = new \ReflectionClass( $class );
-		$prefix = $reflect->getProperty( 'prefix' );
-		return $prefix->getDefaultValue();
+		return Reflection::getDefaultValue( $class, 'prefix', '' );
 	}
 
 	/**
 	 * Create a record
 	 *
 	 * @param array $columns_values
-	 * @return int|bool	The ID of the tracking code or false on error.
+	 * @return int|bool	The ID of the record or false on error.
 	 */
 	public static function create( $columns_values ) {
 		return Database::insert( Database::getTableName( self::modelToTable( get_called_class() ), self::getPrefix() ), $columns_values );
@@ -177,7 +236,52 @@ abstract class Model {
 	 */
 	public static function update( array $columns_values, array $where_values ) {
 		$instance = self::getInstance();
-		return $instance->db->update( $instance->table_name, $columns_values, $where_values );
+		return $instance->db->update( $instance->table, $columns_values, $where_values );
+	}
+
+	/**
+	 * Save the model to the database.
+	 *
+	 * @return false|int
+	 */
+	public function save() {
+		if ( $this->wasRetrieved() ) {
+			$data = $this->data;
+			$id = $data[ $this->primaryKey ];
+			unset( $data[ $this->primaryKey ] );
+
+			if ( $this->trashed() ) {
+				unset( $data['deleted_at'] );
+			}
+
+			$queryBuilder = new QueryBuilder( $this );
+			return $queryBuilder->where( $this->primaryKey, $id )->update( $data );
+		} else {
+			$result = $this->db->insert( $this->table, $this->data );
+			if ( $result ) {
+				$this->data[ $this->primaryKey ] = $result;
+			}
+			return $result;
+		}
+	}
+
+	/**
+	 * Delete the model from the database.
+	 *
+	 * @return bool|int
+	 */
+	public function delete() {
+		if ( $this->wasRetrieved() ) {
+			$data = $this->data;
+			$id = $data[ $this->primaryKey ];
+			$queryBuilder = new QueryBuilder( $this );
+			return $queryBuilder->where( $this->primaryKey, $id )->delete();
+		}
+		return false;
+	}
+
+	public function setAttribute( $key, $value ) {
+		$this->data[ $key ] = $value;
 	}
 
 	/**
@@ -189,7 +293,7 @@ abstract class Model {
 	 */
 	public static function createMany( $columns_values ) {
 		$instance = self::getInstance();
-		return $instance->db->insert_multiple( $instance->table_name, $columns_values );
+		return $instance->db->insert_multiple( $instance->table, $columns_values );
 	}
 
 	/**
@@ -202,8 +306,9 @@ abstract class Model {
 	 * @return HasOne
 	 */
 	public function hasOne( string $related_class ): HasOne {
+		//TODO: See has Many fix it
 		$foreignKey = $this->modelToForeign( $related_class );
-		return new HasOne( $related_class, "{$foreignKey}_id", "id" );
+		return new HasOne( $this, $related_class, "{$foreignKey}_id", "id" );
 	}
 
 	/**
@@ -215,9 +320,24 @@ abstract class Model {
 	 * @return BelongsTo
 	 */
 	public function belongsTo( $related_class ): BelongsTo {
+		//TODO: See has Many fix it
 		$foreignKey = $this->modelToForeign( $related_class );
-		return new BelongsTo( $related_class, "{$foreignKey}_id", "id" );
+		return new BelongsTo( $this, $related_class, "{$foreignKey}_id", "id" );
 	}
+
+	/**
+	 * HasMany to relationship
+	 *
+	 * @since 1.0.2
+	 * @param string $related_class
+	 * 
+	 * @return HasMany
+	 */
+	public function hasMany( $related_class ): HasMany {
+		//$foreignKey = $this->modelToForeign( $related_class );
+		return new HasMany( $this, $related_class, "{$this->foregin_key}_id", "id" );
+	}
+
 
 	/**
 	 * Get table name
@@ -226,9 +346,31 @@ abstract class Model {
 	 * @return string
 	 */
 	public function getTableName() {
-		return $this->table_name;
+		return $this->table;
 	}
 
+	/**
+	 * Get primary key
+	 *
+	 * @since 1.0.2
+	 * 
+	 * @return string
+	 */
+	public function getPrimaryKey() {
+		return $this->primaryKey;
+	}
+
+
+	/**
+	 * Get table name
+	 *
+	 * @param int $id
+	 * @return string
+	 */
+	static public function getTable() {
+		$instance = self::getInstance();
+		return $instance->table;
+	}
 
 	/**
 	 * Get database
@@ -240,4 +382,69 @@ abstract class Model {
 		return $this->db;
 	}
 
+
+	public function trashed() {
+		return in_array( SoftDeletes::class, class_uses( $this ) );
+	}
+
+	public function __get( $name ) {
+		if ( array_key_exists( $name, $this->data ) ) {
+			return $this->data[ $name ];
+		}
+
+		return $this->$name;
+	}
+
+	/**
+	 * Determine if an item exists at an offset.
+	 *
+	 * @param  mixed  $key
+	 * @return bool
+	 */
+	public function offsetExists( $key ) {
+		return isset( $this->data[ $key ] );
+	}
+
+	/**
+	 * Get an item at a given offset.
+	 *
+	 * @param  mixed  $key
+	 * @return mixed
+	 */
+	public function offsetGet( $key ) {
+		return $this->data[ $key ];
+	}
+
+	/**
+	 * Set the item at a given offset.
+	 *
+	 * @param  mixed|null  $key
+	 * @param  mixed  $value
+	 * @return void
+	 */
+	public function offsetSet( $key, $value ) {
+		if ( is_null( $key ) ) {
+			$this->data[] = $value;
+		} else {
+			$this->data[ $key ] = $value;
+		}
+	}
+
+	/**
+	 * Unset the item at a given offset.
+	 *
+	 * @param  mixed  $key
+	 * @return void
+	 */
+	public function offsetUnset( $key ) {
+		unset( $this->data[ $key ] );
+	}
+
+	public function wasRetrieved() {
+		return $this->was_retrieved;
+	}
+
+	public function setWasRetrieved( $was_retrieved ) {
+		$this->was_retrieved = $was_retrieved;
+	}
 }
