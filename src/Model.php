@@ -67,13 +67,20 @@ abstract class Model implements \ArrayAccess {
 	 */
 	public function __construct( $data = [] ) {
 		$this->db = new Database();
-		if ( ! isset( $this->table ) || empty( $this->table ) ) {
-			$this->table = $this->db->getTableName( self::modelToTable( get_called_class() ), $this->getPrefix() );
-		} else {
-			$this->table = $this->db->getTableName( $this->table, $this->getPrefix() );
-		}
+		$this->table = $this->generateTableName();
 		$this->foregin_key = $this->modelToForeign( get_called_class() );
 		$this->data = $data;
+	}
+
+	public static function generateTableName() {
+		$class = get_called_class();
+		$defaultTableName = Reflection::getDefaultValue( $class, 'table' );
+
+		if ( ! isset( $defaultTableName ) || empty( $defaultTableName ) ) {
+			return Database::getTableName( self::modelToTable( get_called_class() ), self::getPrefix() );
+		} else {
+			return Database::getTableName( $defaultTableName, self::getPrefix() );
+		}
 	}
 
 	public static function modelToTable( $model ) {
@@ -217,10 +224,18 @@ abstract class Model implements \ArrayAccess {
 	 * Create a record
 	 *
 	 * @param array $columns_values
-	 * @return int|bool	The ID of the record or false on error.
+	 * @return Model|false
 	 */
 	public static function create( $columns_values ) {
-		return Database::insert( Database::getTableName( self::modelToTable( get_called_class() ), self::getPrefix() ), $columns_values );
+		$tableName = self::generateTableName();
+		$inserted = Database::insert( $tableName, $columns_values );
+		if ( $inserted ) {
+			$class = get_called_class();
+			return new $class(
+				array_merge( $columns_values, [ 'id' => $inserted ] )
+			);
+		}
+		return false;
 	}
 
 
@@ -385,6 +400,10 @@ abstract class Model implements \ArrayAccess {
 
 	public function trashed() {
 		return in_array( SoftDeletes::class, class_uses( $this ) );
+	}
+
+	public function toArray() {
+		return $this->data;
 	}
 
 	public function __get( $name ) {
