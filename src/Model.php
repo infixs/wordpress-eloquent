@@ -38,6 +38,9 @@ abstract class Model implements \ArrayAccess {
 
 	private $was_retrieved = false;
 
+
+	private $update_data = [];
+
 	/**
 	 * Database instance
 	 * 
@@ -154,6 +157,20 @@ abstract class Model implements \ArrayAccess {
 	}
 
 	/**
+	 * Get count for all records from the table
+	 * 
+	 * @since 1.0.3
+	 * 
+	 * @return int Database query results.
+	 */
+	public static function count() {
+		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		$result = $builder->count();
+		return $result;
+	}
+
+	/**
 	 * Where
 	 *
 	 * @since 1.0.0
@@ -261,14 +278,8 @@ abstract class Model implements \ArrayAccess {
 	 */
 	public function save() {
 		if ( $this->wasRetrieved() ) {
-			$data = $this->data;
-			$id = $data[ $this->primaryKey ];
-			unset( $data[ $this->primaryKey ] );
-
-			if ( $this->trashed() ) {
-				unset( $data['deleted_at'] );
-			}
-
+			$data = $this->update_data;
+			$id = $this->data[ $this->primaryKey ];
 			$queryBuilder = new QueryBuilder( $this );
 			return $queryBuilder->where( $this->primaryKey, $id )->update( $data );
 		} else {
@@ -415,6 +426,22 @@ abstract class Model implements \ArrayAccess {
 	}
 
 	/**
+	 * Dynamically set an attribute on the model.
+	 *
+	 * @param  string  $name
+	 * @param  mixed  $value
+	 * 
+	 * @return void
+	 */
+	public function __set( $name, $value ) {
+		if ( $this->wasRetrieved() ) {
+			$this->update_data[ $name ] = $value;
+		} else {
+			$this->data[ $name ] = $value;
+		}
+	}
+
+	/**
 	 * Determine if an item exists at an offset.
 	 *
 	 * @param  mixed  $key
@@ -442,10 +469,14 @@ abstract class Model implements \ArrayAccess {
 	 * @return void
 	 */
 	public function offsetSet( $key, $value ) {
-		if ( is_null( $key ) ) {
-			$this->data[] = $value;
+		if ( $this->wasRetrieved() ) {
+			$this->update_data[ $key ] = $value;
 		} else {
-			$this->data[ $key ] = $value;
+			if ( is_null( $key ) ) {
+				$this->data[] = $value;
+			} else {
+				$this->data[ $key ] = $value;
+			}
 		}
 	}
 

@@ -281,6 +281,7 @@ class QueryBuilder {
 	 * Count all records from the table
 	 *
 	 * @since 1.0.0
+	 * 
 	 * @return int Database query results.
 	 */
 	public function count() {

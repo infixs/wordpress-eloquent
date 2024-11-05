@@ -48,7 +48,17 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 	}
 
 	public function toArray() {
-		return $this->items;
+		$items = [];
+
+		foreach ( $this->items as $item ) {
+			if ( $item instanceof Model ) {
+				$items[] = $item->toArray();
+			} else {
+				$items[] = $item;
+			}
+		}
+
+		return $items;
 	}
 
 	public function pluck( $value, $key = null ) {
