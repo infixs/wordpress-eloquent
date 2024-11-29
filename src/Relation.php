@@ -41,6 +41,11 @@ abstract class Relation {
 		return $this->localKey;
 	}
 
+	/**
+	 * Related Model Class
+	 * 
+	 * @return Model|string
+	 */
 	public function getRelatedClass() {
 		return $this->relatedClass;
 	}

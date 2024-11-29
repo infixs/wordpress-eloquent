@@ -39,21 +39,50 @@ class QueryBuilder {
 	 * 
 	 * @since 1.0.0
 	 * 
+	 * @updated 1.0.3
+	 * 
 	 * @var array{
-	 * 		@type string $column,
-	 * 		@type mixed $value,
-	 * 		@type string $operator,
-	 * 		@type string $method
+	 * 		column: string,
+	 * 		value: mixed,
+	 * 		operator: string,
+	 * 		method: string,
+	 * 		table: string
 	 * }
 	 */
 	protected $whereArray = [];
+
+	/**
+	 * Exists array
+	 * 
+	 * @since 1.0.0
+	 * 
+	 * @var array{
+	 * 		sql: string,
+	 * 		method: string
+	 * }
+	 */
+	protected $existsArray = [];
+
+	/**
+	 * Where column array
+	 * 
+	 * @since 1.0.3
+	 * 
+	 * @var array{
+	 * 		column_one: string,
+	 * 		operator: string,
+	 * 		column_two: string,
+	 * 		method: string
+	 * }
+	 */
+	protected $whereColumnArray = [];
 
 	protected $joinArray = [];
 
 	protected $groupBy = [];
 
 	/**
-	 * Where array
+	 * With array
 	 * 
 	 * @since 1.0.2
 	 * 
@@ -62,6 +91,8 @@ class QueryBuilder {
 	 * 		@type string $table,
 	 * 		@type string $foreign_key,
 	 * 		@type string $local_key,
+	 * 		@type \Infixs\WordpressEloquent\Model $model,
+	 * 		@type Relation $relation_type
 	 * }
 	 */
 	protected $withArray = [];
@@ -133,7 +164,7 @@ class QueryBuilder {
 	 * 
 	 * @return QueryBuilder
 	 */
-	public function where( $column, $operator = null, $value = null ) {
+	public function where( $column, $operator = null, $value = null, $method = null, $table = null ) {
 		if ( is_array( $column ) ) {
 			foreach ( $column as $col => $val ) {
 				$this->where( $col, $val );
@@ -141,7 +172,57 @@ class QueryBuilder {
 			return $this;
 		}
 
-		$this->whereArray[] = [ 'column' => $column, 'value' => $value ?? $operator, 'operator' => isset( $value ) ? $operator : '=' ];
+		$where = [ 
+			'column' => $column,
+			'value' => $value ?? $operator,
+			'operator' => isset( $value ) ? $operator : '='
+		];
+
+		if ( $method ) {
+			$where['method'] = $method;
+		}
+
+		if ( $table ) {
+			$where['table'] = $table;
+		}
+
+		$this->whereArray[] = $where;
+
+		return $this;
+	}
+
+	/**
+	 * Where has relation
+	 * 
+	 * @param string $relation
+	 * @param callable(QueryBuilder $query) $callback
+	 * 
+	 * @return QueryBuilder
+	 */
+	public function whereHas( $relation, $callback ) {
+		$reflection = new \ReflectionClass( $this->model );
+
+		$method = $reflection->getMethod( $relation );
+
+		/** @var Relation $hasMany */
+		$hasMany = $method->invoke( $this->model );
+		$related_class = $hasMany->getRelatedClass();
+
+		$query = $related_class::query();
+
+		$query->whereColumn( $this->getModel()->getPrimaryKey(), $this->model->getTableName() . '.' . $hasMany->getForeignKey() );
+
+		if ( is_callable( $callback ) ) {
+			call_user_func( $callback, $query );
+		}
+
+		$sql = $query->generateQuery();
+
+		$this->existsArray[] = [ 
+			'sql' => $sql,
+			'method' => 'AND'
+		];
+
 		return $this;
 	}
 
@@ -189,6 +270,22 @@ class QueryBuilder {
 	 * @return static
 	 */
 	public function orWhereRelation( $relation, $column, $value_or_operator, $field_value = null ) {
+		return $this->whereRelation( $relation, $column, $value_or_operator, $field_value, 'OR' );
+	}
+
+	/**
+	 * Add an "where" with relation clause to the query.
+	 * 
+	 * @since 1.0.0
+	 * 
+	 * @param mixed $column
+	 * @param mixed $operator
+	 * @param mixed $value
+	 * 
+	 * @return static
+	 */
+	public function whereRelation( $relation, $column, $value_or_operator, $field_value = null, $query_method = 'AND' ) {
+		//TODO: Verify and refactor this
 		$reflection = new \ReflectionClass( $this->model );
 
 		$method = $reflection->getMethod( $relation );
@@ -201,14 +298,32 @@ class QueryBuilder {
 				 * TODO: Verify not implemented
 				 */
 				$hasOne = $method->invoke( $this->model );
-
-				$table_name = Database::getTableName( "{$relation}s" );
+				$related_class = $hasOne->getRelatedClass();
+				$table_name = $related_class::generateTableName();
 
 				$this->joinArray[] = [ 
 					'table' => $table_name,
 					'foreign_key' => $this->model->getForeignKey() . '_id',
 					'local_key' => 'id',
 				];
+
+				//TODO: Replace by $this->where
+				$this->whereArray[] = [ 
+					'method' => $query_method,
+					'column' => "{$column}",
+					'table' => $table_name,
+					'value' => isset( $field_value ) ? $field_value : $value_or_operator,
+					'operator' => isset( $field_value ) ? $value_or_operator : '='
+				];
+
+				if ( $related_class::isTrashed() ) {
+					$this->whereArray[] = [ 
+						'column' => 'deleted_at',
+						'table' => $table_name,
+						'value' => '!#####NULL#####!',
+						'operator' => 'IS'
+					];
+				}
 			}
 
 			if ( $returnType->getName() === BelongsTo::class) {
@@ -216,64 +331,109 @@ class QueryBuilder {
 				 * @var BelongsTo
 				 */
 				$belongsTo = $method->invoke( $this->model );
-
-				//$belongsTo->ge
-				$table_name = Database::getTableName( "{$relation}s" );
+				$related_class = $belongsTo->getRelatedClass();
+				$table_name = $related_class::generateTableName();
 
 				$this->joinArray[] = [ 
 					'table' => $table_name,
 					'foreign_key' => $belongsTo->getLocalKey(),
 					'local_key' => $belongsTo->getForeignKey()
 				];
+
+				//TODO: Replace by $this->where
+				$this->whereArray[] = [ 
+					'method' => $query_method,
+					'column' => "{$column}",
+					'table' => $table_name,
+					'value' => isset( $field_value ) ? $field_value : $value_or_operator,
+					'operator' => isset( $field_value ) ? $value_or_operator : '='
+				];
+
+				if ( $related_class::isTrashed() ) {
+					$this->whereArray[] = [ 
+						'column' => 'deleted_at',
+						'table' => $table_name,
+						'value' => '!#####NULL#####!',
+						'operator' => 'IS'
+					];
+				}
 			}
 		}
-		$this->whereArray[] = [ 
-			'method' => 'OR',
-			'column' => "{$table_name}.{$column}",
-			'value' => isset( $field_value ) ? $field_value : $value_or_operator,
-			'operator' => isset( $field_value ) ? $value_or_operator : '='
-		];
+
+
 
 		return $this;
 	}
 
+	/**
+	 * Add an "where" with columns compare clause to the query.
+	 * 
+	 * @since 1.0.3
+	 * 
+	 * @param string $column_one Column name
+	 * @param string $operator Operator or Column name
+	 * @param string $column_two Column name 
+	 * 
+	 * @return static
+	 */
+	public function whereColumn( $column_one, $operator = null, $column_two = null, $method = 'AND' ) {
+		$this->whereColumnArray[] = [ 
+			'column_one' => $column_one,
+			'operator' => $column_two ? $operator : '=',
+			'column_two' => $column_two ?? $operator,
+			'method' => $method
+		];
+
+		return $this;
+	}
 
 	/**
 	 * TODO: Verify
 	 */
 	public function with( string $relation ) {
 		$reflection = new \ReflectionClass( $this->model );
-		$methods = $reflection->getMethods( \ReflectionMethod::IS_PUBLIC );
+		$method = $reflection->getMethod( $relation );
 
-		foreach ( $methods as $method ) {
-			if ( $relation !== $method->getName() )
-				continue;
-
-			$returnType = $method->getReturnType();
-
-			$returnClassType = call_user_func( [ $this->model, $relation ] );
-			$relatedClass = call_user_func( [ $returnClassType, 'getRelatedClass' ] );
-
-			if ( $returnType && $returnType->getName() === HasOne::class) {
-				$this->withArray[] = [ 
-					'model' => $relatedClass,
-					'relation' => $relation,
-					'table' => $relatedClass::getTable(),
-					'foreign_key' => $this->model->getForeignKey() . '_id',
-					'local_key' => 'id',
-				];
-			}
-
-			if ( $returnType && $returnType->getName() === HasMany::class) {
-				$this->withArray[] = [ 
-					'model' => $relatedClass,
-					'relation' => $relation,
-					'table' => $relatedClass::getTable(),
-					'foreign_key' => $this->model->getForeignKey() . '_id',
-					'local_key' => 'id',
-				];
-			}
+		if ( $relation !== $method->getName() ) {
+			return $this;
 		}
+
+		$returnType = $method->getReturnType();
+
+		$returnClassType = $method->invoke( $this->model );
+		$relatedClass = $returnClassType->getRelatedClass();
+
+		if ( $returnType && $returnType->getName() === HasOne::class) {
+			$this->withArray[] = [ 
+				'model' => $relatedClass,
+				'relation' => $relation,
+				'table' => $relatedClass::getTable(),
+				'foreign_key' => $this->model->getForeignKey() . '_id',
+				'local_key' => 'id',
+			];
+		}
+
+		if ( $returnType && $returnType->getName() === BelongsTo::class) {
+			$this->withArray[] = [ 
+				'model' => $relatedClass,
+				'relation' => $relation,
+				'table' => $relatedClass::getTable(),
+				'foreign_key' => 'id',
+				'local_key' => $relatedClass::getForeignKeyStatic(),
+				'relation_type' => BelongsTo::class
+			];
+		}
+
+		if ( $returnType && $returnType->getName() === HasMany::class) {
+			$this->withArray[] = [ 
+				'model' => $relatedClass,
+				'relation' => $relation,
+				'table' => $relatedClass::getTable(),
+				'foreign_key' => $this->model->getForeignKey() . '_id',
+				'local_key' => 'id',
+			];
+		}
+
 		return $this;
 	}
 
@@ -316,7 +476,7 @@ class QueryBuilder {
 	}
 
 	public function update( $columns_values ) {
-		$where = $this->resolveWhere( $this->whereArray );
+		$where = $this->resolveWhere();
 		$set_clauses = [];
 		$values = [];
 
@@ -352,10 +512,17 @@ class QueryBuilder {
 
 		if ( ! empty( $this->whereArray ) ) {
 			$sql .= ' WHERE ';
-			$where = $this->resolveWhere( $this->whereArray );
+			$whereExistsSql = $this->resolveWhereExists();
+			$whereColumnSql = $this->resolveWhereColumn();
+			$where = $this->resolveWhere();
 			$placeholders = $where['placeholders'];
 			$values = $where['values'];
-			$sql .= implode( ' ', $placeholders );
+
+			$whereSql = implode( ' ', $placeholders );
+
+			$conditions = array_filter( [ $whereExistsSql, $whereColumnSql, $whereSql ] );
+			$sql .= implode( ' AND ', $conditions );
+
 			$sql = $this->db->prepare( $sql, ...$values );
 		}
 
@@ -384,23 +551,56 @@ class QueryBuilder {
 		return $sql;
 	}
 
-	public function resolveWhere( $where ) {
+	public function resolveWhere() {
 		$placeholders = [];
 		$values = [];
 		foreach ( $this->whereArray as $where ) {
 			$operator = $where['operator'] ?? '=';
 			$value = $where['operator'] === 'IN' ? '(' . implode( ', ', array_fill( 0, count( $where['value'] ), '%s' ) ) . ')' : '%s';
-			$placeholder = "{$this->table_name}.{$where['column']} {$operator} {$value}";
+			$table_name = $where['table'] ?? $this->table_name;
+			$placeholder = "{$table_name}.{$where['column']} {$operator} {$value}";
 			$method = $where['method'] ?? 'AND';
 			$placeholders[] = empty( $placeholders ) ? $placeholder : "{$method} {$placeholder}";
+
 			if ( is_array( $where['value'] ) ) {
 				$values = array_merge( $values, $where['value'] );
 			} else {
 				$values[] = $where['value'];
 			}
+
 		}
 
 		return [ 'placeholders' => $placeholders, 'values' => $values ];
+	}
+
+	public function resolveWhereColumn() {
+		$placeholders = [];
+
+		foreach ( $this->whereColumnArray as $where ) {
+			$operator = $where['operator'] ?? '=';
+			$column_two = $where['column_two'];
+			$table_name = $this->table_name;
+			$placeholder = "{$table_name}.{$where['column_one']} {$operator} {$column_two}";
+			$method = $where['method'] ?? 'AND';
+			$placeholders[] = empty( $placeholders ) ? $placeholder : "{$method} {$placeholder}";
+		}
+
+		$sql = implode( ' ', $placeholders );
+
+		return $sql;
+	}
+
+	public function resolveWhereExists() {
+		$placeholders = [];
+		foreach ( $this->existsArray as $where ) {
+			$placeholder = $where['sql'];
+			$method = $where['method'] ?? 'AND';
+			$placeholders[] = empty( $placeholders ) ? "EXISTS ({$placeholder})" : "{$method} EXISTS ({$placeholder})";
+		}
+
+		$sql = implode( ' ', $placeholders );
+
+		return $sql;
 	}
 
 	/**
@@ -417,33 +617,34 @@ class QueryBuilder {
 
 		$relations = [];
 
-		$ids = [];
-		foreach ( $results as $result ) {
-			$primaryKey = $this->model->getPrimaryKey();
-			$ids[] = $result->$primaryKey;
-		}
+		$ids = wp_list_pluck( $results, $this->model->getPrimaryKey() );
 
 		//TODO: optimize this
 		foreach ( $this->withArray as $with ) {
-			foreach ( $ids as $id ) {
-				$relations[ $id ][ $with['relation'] ] = new Collection( [] );
+			if ( $with['relation_type'] !== BelongsTo::class) {
+				foreach ( $ids as $id ) {
+					$relations[ $id ][ $with['relation'] ] = new Collection( [] );
+				}
 			}
 
-			$softDeleteSql = '';
-			if ( in_array( SoftDeletes::class, class_uses( $with['model'] ) ) ) {
-				$softDeleteSql = " AND deleted_at IS NULL";
-			}
+			$foreginIds = wp_list_pluck( $results, $with['local_key'] );
 
-			$sql = "SELECT * FROM {$with['table']} WHERE {$with['table']}.{$with['foreign_key']} IN (%s){$softDeleteSql}";
-			$sql = $this->db->prepare( $sql, implode( ', ', $ids ) );
-			$relationResult = $this->db->get_results( $sql );
+			/** @var Model $foreginModel */
+			$foreginModel = new $with['model'];
+			$relationResult = $foreginModel::whereIn( $with['foreign_key'], $foreginIds )->get();
 
-			foreach ( $relationResult as $item ) {
-				$withModel = new $with['model']( (array) $item );
-				$withModel->setWasRetrieved( true );
-				$foreginKey = $with['foreign_key'];
-				if ( isset( $relations[ $item->$foreginKey ], $relations[ $item->$foreginKey ][ $with['relation'] ] ) ) {
-					$relations[ $item->$foreginKey ][ $with['relation'] ]->push( $withModel );
+			if ( $with['relation_type'] === BelongsTo::class) {
+				foreach ( $results as $item ) {
+					$data = $relationResult->firstWhere( $with['foreign_key'], $item->{$with['local_key']} );
+					$foreginKey = $with['foreign_key'];
+					$relations[ $item->$foreginKey ][ $with['relation'] ] = $data;
+				}
+			} else {
+				foreach ( $relationResult as $item ) {
+					$foreginKey = $with['foreign_key'];
+					if ( isset( $relations[ $item->$foreginKey ], $relations[ $item->$foreginKey ][ $with['relation'] ] ) ) {
+						$relations[ $item->$foreginKey ][ $with['relation'] ]->push( $item );
+					}
 				}
 			}
 		}
@@ -530,5 +731,16 @@ class QueryBuilder {
 	public function offset( $offset ) {
 		$this->offset = $offset;
 		return $this;
+	}
+
+	/**
+	 * Get the model instance
+	 *
+	 * @since 1.0.3
+	 * 
+	 * @return Model
+	 */
+	public function getModel() {
+		return $this->model;
 	}
 }

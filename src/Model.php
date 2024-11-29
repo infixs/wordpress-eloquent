@@ -102,6 +102,12 @@ abstract class Model implements \ArrayAccess {
 		return $this->foregin_key;
 	}
 
+	public static function getForeignKeyStatic() {
+		$reflect = new \ReflectionClass( get_called_class() );
+		$table_name_underscored = preg_replace( '/(?<!^)([A-Z])/', '_$1', $reflect->getShortName() );
+		return strtolower( $table_name_underscored ) . '_id';
+	}
+
 	/**
 	 * Query
 	 *
@@ -186,6 +192,23 @@ abstract class Model implements \ArrayAccess {
 		$instance = self::getInstance();
 		$builder = new QueryBuilder( $instance );
 		$builder->where( $column, $operator, $value );
+		return $builder;
+	}
+
+	/**
+	 * Where Has
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param string $relation
+	 * @param callable(QueryBuilder $query) $callback
+	 * 
+	 * @return QueryBuilder
+	 */
+	public static function whereHas( $relation, $callback ) {
+		$instance = self::getInstance();
+		$builder = new QueryBuilder( $instance );
+		$builder->whereHas( $relation, $callback );
 		return $builder;
 	}
 
@@ -411,6 +434,10 @@ abstract class Model implements \ArrayAccess {
 
 	public function trashed() {
 		return in_array( SoftDeletes::class, class_uses( $this ) );
+	}
+
+	public static function isTrashed() {
+		return in_array( SoftDeletes::class, class_uses( get_called_class() ) );
 	}
 
 	public function toArray() {
