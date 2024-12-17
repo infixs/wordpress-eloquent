@@ -304,7 +304,11 @@ abstract class Model implements \ArrayAccess {
 			$data = $this->update_data;
 			$id = $this->data[ $this->primaryKey ];
 			$queryBuilder = new QueryBuilder( $this );
-			return $queryBuilder->where( $this->primaryKey, $id )->update( $data );
+			$result = $queryBuilder->where( $this->primaryKey, $id )->update( $data );
+			if ( $result ) {
+				$this->data = array_merge( $this->data, $this->update_data );
+			}
+			return $result;
 		} else {
 			$result = $this->db->insert( $this->table, $this->data );
 			if ( $result ) {
@@ -327,6 +331,10 @@ abstract class Model implements \ArrayAccess {
 			return $queryBuilder->where( $this->primaryKey, $id )->delete();
 		}
 		return false;
+	}
+
+	public function relationLoaded( $relation ) {
+		return isset( $this->data[ $relation ] );
 	}
 
 	public function setAttribute( $key, $value ) {
@@ -474,7 +482,7 @@ abstract class Model implements \ArrayAccess {
 	 * @param  mixed  $key
 	 * @return bool
 	 */
-	public function offsetExists( $key ) {
+	public function offsetExists( $key ): bool {
 		return isset( $this->data[ $key ] );
 	}
 
@@ -484,6 +492,7 @@ abstract class Model implements \ArrayAccess {
 	 * @param  mixed  $key
 	 * @return mixed
 	 */
+	#[\ReturnTypeWillChange ]
 	public function offsetGet( $key ) {
 		return $this->data[ $key ];
 	}
@@ -495,11 +504,11 @@ abstract class Model implements \ArrayAccess {
 	 * @param  mixed  $value
 	 * @return void
 	 */
-	public function offsetSet( $key, $value ) {
+	public function offsetSet( $key, $value ): void {
 		if ( $this->wasRetrieved() ) {
 			$this->update_data[ $key ] = $value;
 		} else {
-			if ( is_null( $key ) ) {
+			if ( $key === null ) {
 				$this->data[] = $value;
 			} else {
 				$this->data[ $key ] = $value;
@@ -513,7 +522,7 @@ abstract class Model implements \ArrayAccess {
 	 * @param  mixed  $key
 	 * @return void
 	 */
-	public function offsetUnset( $key ) {
+	public function offsetUnset( $key ): void {
 		unset( $this->data[ $key ] );
 	}
 

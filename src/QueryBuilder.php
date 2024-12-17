@@ -431,6 +431,7 @@ class QueryBuilder {
 				'table' => $relatedClass::getTable(),
 				'foreign_key' => $this->model->getForeignKey() . '_id',
 				'local_key' => 'id',
+				'relation_type' => HasMany::class
 			];
 		}
 

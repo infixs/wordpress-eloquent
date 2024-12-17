@@ -21,6 +21,13 @@ abstract class HasOneOrMany extends Relation {
 		return $model->save() ? $model : false;
 	}
 
+	public function create( $attributes ) {
+		$attributes[ $this->getForeignKey()] = $this->parent->{$this->getLocalKey()};
+		return $this->relatedClass::create(
+			$attributes
+		);
+	}
+
 	/**
 	 * Set the foreign ID for creating a related model.
 	 *

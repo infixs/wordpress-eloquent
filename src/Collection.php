@@ -122,13 +122,41 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 		return null;
 	}
 
+	public function isEmpty() {
+		return empty( $this->items );
+	}
+
+	public function first() {
+		return $this->items[0] ?? null;
+	}
+
+	public function contains( $key, $value ) {
+		foreach ( $this->items as $item ) {
+			if ( $item->$key === $value ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	public function sortByDesc( $key ) {
+		$items = $this->items;
+
+		usort( $items, function ($a, $b) use ($key) {
+			return $b->$key <=> $a->$key;
+		} );
+
+		return new self( $items );
+	}
+
 	/**
 	 * Determine if an item exists at an offset.
 	 *
 	 * @param  mixed  $key
 	 * @return bool
 	 */
-	public function offsetExists( $key ) {
+	public function offsetExists( $key ): bool {
 		return isset( $this->items[ $key ] );
 	}
 
@@ -138,6 +166,7 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 	 * @param  mixed  $key
 	 * @return mixed
 	 */
+	#[\ReturnTypeWillChange ]
 	public function offsetGet( $key ) {
 		return $this->items[ $key ];
 	}
@@ -149,8 +178,8 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 	 * @param  mixed  $value
 	 * @return void
 	 */
-	public function offsetSet( $key, $value ) {
-		if ( is_null( $key ) ) {
+	public function offsetSet( $key, $value ): void {
+		if ( $key === null ) {
 			$this->items[] = $value;
 		} else {
 			$this->items[ $key ] = $value;
@@ -163,7 +192,7 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 	 * @param  mixed  $key
 	 * @return void
 	 */
-	public function offsetUnset( $key ) {
+	public function offsetUnset( $key ): void {
 		unset( $this->items[ $key ] );
 	}
 
@@ -173,7 +202,7 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 	 *
 	 * @return \ArrayIterator
 	 */
-	public function getIterator() {
+	public function getIterator(): \ArrayIterator {
 		return new \ArrayIterator( $this->items );
 	}
 }
