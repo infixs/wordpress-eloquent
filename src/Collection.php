@@ -78,6 +78,12 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 		return new self( $results );
 	}
 
+	public function map( $callback ) {
+		$keys = array_keys( $this->items );
+		$items = array_map( $callback, $this->items, $keys );
+		return array_combine( $keys, $items );
+	}
+
 
 	public function data_get( $target, $key, $default = null ) {
 		if ( is_null( $key ) ) {
