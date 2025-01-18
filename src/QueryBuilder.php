@@ -557,6 +557,7 @@ class QueryBuilder {
 		$values = [];
 		foreach ( $this->whereArray as $where ) {
 			$operator = $where['operator'] ?? '=';
+			$where['value'] = is_array( $where['value'] ) && empty( $where['value'] ) ? [ null ] : $where['value'];
 			$value = $where['operator'] === 'IN' ? '(' . implode( ', ', array_fill( 0, count( $where['value'] ), '%s' ) ) . ')' : '%s';
 			$table_name = $where['table'] ?? $this->table_name;
 			$placeholder = "{$table_name}.{$where['column']} {$operator} {$value}";

@@ -271,9 +271,13 @@ abstract class Model implements \ArrayAccess {
 		$inserted = Database::insert( $tableName, $columns_values );
 		if ( $inserted ) {
 			$class = get_called_class();
-			return new $class(
+			$newClass = new $class(
 				array_merge( $columns_values, [ 'id' => $inserted ] )
 			);
+
+			$newClass->setWasRetrieved( true );
+
+			return $newClass;
 		}
 		return false;
 	}

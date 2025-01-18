@@ -39,9 +39,14 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 	 * @param  mixed  ...$values
 	 * @return $this
 	 */
-	public function push( ...$values ) {
-		foreach ( $values as $value ) {
-			$this->items[] = $value;
+	public function push( $values ) {
+
+		if ( is_array( $values ) ) {
+			foreach ( $values as $value ) {
+				$this->items[] = $value;
+			}
+		} else {
+			$this->items[] = $values;
 		}
 
 		return $this;
@@ -59,6 +64,10 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 		}
 
 		return $items;
+	}
+
+	public function all() {
+		return $this->items;
 	}
 
 	public function pluck( $value, $key = null ) {
@@ -138,7 +147,7 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 
 	public function contains( $key, $value ) {
 		foreach ( $this->items as $item ) {
-			if ( $item->$key === $value ) {
+			if ( isset( $item->$key ) && $item->$key === $value ) {
 				return true;
 			}
 		}
