@@ -52,6 +52,11 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 		return $this;
 	}
 
+	public function slice( $offset, $length = null ) {
+		$slicedArray = array_slice( $this->items, $offset, $length );
+		return new self( $slicedArray );
+	}
+
 	public function toArray() {
 		$items = [];
 
@@ -135,6 +140,18 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 		}
 
 		return null;
+	}
+
+	public function where( $key, $value ) {
+		$items = [];
+
+		foreach ( $this->items as $item ) {
+			if ( isset( $item->$key ) && $item->$key === $value ) {
+				$items[] = $item;
+			}
+		}
+
+		return $items;
 	}
 
 	public function isEmpty() {

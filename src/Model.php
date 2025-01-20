@@ -480,6 +480,10 @@ abstract class Model implements \ArrayAccess {
 		}
 	}
 
+	public function __isset( $name ) {
+		return isset( $this->data[ $name ] );
+	}
+
 	/**
 	 * Determine if an item exists at an offset.
 	 *
