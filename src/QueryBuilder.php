@@ -204,13 +204,17 @@ class QueryBuilder {
 
 		$method = $reflection->getMethod( $relation );
 
-		/** @var Relation $hasMany */
-		$hasMany = $method->invoke( $this->model );
-		$related_class = $hasMany->getRelatedClass();
+		/** @var Relation $relation */
+		$relation = $method->invoke( $this->model );
+		$related_class = $relation->getRelatedClass();
 
 		$query = $related_class::query();
 
-		$query->whereColumn( $this->getModel()->getPrimaryKey(), $this->model->getTableName() . '.' . $hasMany->getForeignKey() );
+		if ( $relation instanceof HasMany ) {
+			$query->whereColumn( $relation->getForeignKey(), $this->model->getTableName() . '.' . $relation->getLocalKey() );
+		} elseif ( $relation instanceof BelongsTo ) {
+			$query->whereColumn( $relation->getLocalKey(), $this->model->getTableName() . '.' . $relation->getForeignKey() );
+		}
 
 		if ( is_callable( $callback ) ) {
 			call_user_func( $callback, $query );
