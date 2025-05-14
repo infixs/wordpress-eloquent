@@ -98,6 +98,10 @@ class Collection implements \ArrayAccess, \IteratorAggregate {
 		return array_combine( $keys, $items );
 	}
 
+	public function filter( $callback = null ) {
+		$items = array_filter( $this->items, $callback );
+		return new self( $items );
+	}
 
 	public function data_get( $target, $key, $default = null ) {
 		if ( is_null( $key ) ) {

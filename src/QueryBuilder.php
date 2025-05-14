@@ -706,6 +706,16 @@ class QueryBuilder {
 		return $result;
 	}
 
+	/**
+	 * Order by
+	 *
+	 * @since 1.0.0
+	 * 
+	 * @param array $attributes
+	 * @param string $order Values: asc, desc
+	 * 
+	 * @return QueryBuilder
+	 */
 	public function orderBy( $column, $order = 'asc' ) {
 		$this->orderBy[] = [ 'column' => $column, 'order' => $order ];
 		return $this;
