@@ -153,7 +153,7 @@ abstract class Model implements \ArrayAccess {
 	 * 
 	 * @since 1.0.0
 	 * 
-	 * @return object|array
+	 * @return Collection
 	 */
 	public static function all() {
 		$instance = self::getInstance();
