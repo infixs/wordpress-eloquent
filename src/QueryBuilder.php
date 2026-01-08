@@ -172,7 +172,7 @@ class QueryBuilder {
 			return $this;
 		}
 
-		$where = [ 
+		$where = [
 			'column' => $column,
 			'value' => $value ?? $operator,
 			'operator' => isset( $value ) ? $operator : '='
@@ -222,9 +222,41 @@ class QueryBuilder {
 
 		$sql = $query->generateQuery();
 
-		$this->existsArray[] = [ 
+		$this->existsArray[] = [
 			'sql' => $sql,
 			'method' => 'AND'
+		];
+
+		return $this;
+	}
+
+	public function whereDoesntHave( $relation, $callback ) {
+		$reflection = new \ReflectionClass( $this->model );
+
+		$method = $reflection->getMethod( $relation );
+
+		/** @var Relation $relation */
+		$relation = $method->invoke( $this->model );
+		$related_class = $relation->getRelatedClass();
+
+		$query = $related_class::query();
+
+		if ( $relation instanceof HasMany ) {
+			$query->whereColumn( $relation->getForeignKey(), $this->model->getTableName() . '.' . $relation->getLocalKey() );
+		} elseif ( $relation instanceof BelongsTo ) {
+			$query->whereColumn( $relation->getLocalKey(), $this->model->getTableName() . '.' . $relation->getForeignKey() );
+		}
+
+		if ( is_callable( $callback ) ) {
+			call_user_func( $callback, $query );
+		}
+
+		$sql = $query->generateQuery();
+
+		$this->existsArray[] = [
+			'sql' => $sql,
+			'method' => 'AND',
+			'not' => true,
 		];
 
 		return $this;
@@ -305,14 +337,14 @@ class QueryBuilder {
 				$related_class = $hasOne->getRelatedClass();
 				$table_name = $related_class::generateTableName();
 
-				$this->joinArray[] = [ 
+				$this->joinArray[] = [
 					'table' => $table_name,
 					'foreign_key' => $this->model->getForeignKey() . '_id',
 					'local_key' => 'id',
 				];
 
 				//TODO: Replace by $this->where
-				$this->whereArray[] = [ 
+				$this->whereArray[] = [
 					'method' => $query_method,
 					'column' => "{$column}",
 					'table' => $table_name,
@@ -321,7 +353,7 @@ class QueryBuilder {
 				];
 
 				if ( $related_class::isTrashed() ) {
-					$this->whereArray[] = [ 
+					$this->whereArray[] = [
 						'column' => 'deleted_at',
 						'table' => $table_name,
 						'value' => '!#####NULL#####!',
@@ -338,14 +370,14 @@ class QueryBuilder {
 				$related_class = $belongsTo->getRelatedClass();
 				$table_name = $related_class::generateTableName();
 
-				$this->joinArray[] = [ 
+				$this->joinArray[] = [
 					'table' => $table_name,
 					'foreign_key' => $belongsTo->getLocalKey(),
 					'local_key' => $belongsTo->getForeignKey()
 				];
 
 				//TODO: Replace by $this->where
-				$this->whereArray[] = [ 
+				$this->whereArray[] = [
 					'method' => $query_method,
 					'column' => "{$column}",
 					'table' => $table_name,
@@ -354,7 +386,7 @@ class QueryBuilder {
 				];
 
 				if ( $related_class::isTrashed() ) {
-					$this->whereArray[] = [ 
+					$this->whereArray[] = [
 						'column' => 'deleted_at',
 						'table' => $table_name,
 						'value' => '!#####NULL#####!',
@@ -381,7 +413,7 @@ class QueryBuilder {
 	 * @return static
 	 */
 	public function whereColumn( $column_one, $operator = null, $column_two = null, $method = 'AND' ) {
-		$this->whereColumnArray[] = [ 
+		$this->whereColumnArray[] = [
 			'column_one' => $column_one,
 			'operator' => $column_two ? $operator : '=',
 			'column_two' => $column_two ?? $operator,
@@ -408,7 +440,7 @@ class QueryBuilder {
 		$relatedClass = $returnClassType->getRelatedClass();
 
 		if ( $returnType && $returnType->getName() === HasOne::class) {
-			$this->withArray[] = [ 
+			$this->withArray[] = [
 				'model' => $relatedClass,
 				'relation' => $relation,
 				'table' => $relatedClass::getTable(),
@@ -418,7 +450,7 @@ class QueryBuilder {
 		}
 
 		if ( $returnType && $returnType->getName() === BelongsTo::class) {
-			$this->withArray[] = [ 
+			$this->withArray[] = [
 				'model' => $relatedClass,
 				'relation' => $relation,
 				'table' => $relatedClass::getTable(),
@@ -429,7 +461,7 @@ class QueryBuilder {
 		}
 
 		if ( $returnType && $returnType->getName() === HasMany::class) {
-			$this->withArray[] = [ 
+			$this->withArray[] = [
 				'model' => $relatedClass,
 				'relation' => $relation,
 				'table' => $relatedClass::getTable(),
@@ -601,7 +633,9 @@ class QueryBuilder {
 		foreach ( $this->existsArray as $where ) {
 			$placeholder = $where['sql'];
 			$method = $where['method'] ?? 'AND';
-			$placeholders[] = empty( $placeholders ) ? "EXISTS ({$placeholder})" : "{$method} EXISTS ({$placeholder})";
+			$not = ! empty( $where['not'] );
+			$exists = ( $not ? 'NOT ' : '' ) . "EXISTS ({$placeholder})";
+			$placeholders[] = empty( $placeholders ) ? $exists : "{$method} {$exists}";
 		}
 
 		$sql = implode( ' ', $placeholders );
